@@ -16,15 +16,19 @@ contract SMS {
     mapping(address => Student) public students;
 
     // Events
-    event StudentApplied(address indexed studentId, string name);
-    event StudentRegistered(address indexed studentId, string name);
-    event SchoolFeePaid(address indexed studentId, uint256 amount);
-    event FeeUpdated(uint256 oldFee, uint256 newFee);
-    event FundsWithdrawn(uint256 amount);
-   
+    event StudentApplied(address studentId, string name);
+    event StudentRegistered(address studentId, string name);
+    event SchoolFeePaid(address studentId, uint256 amount);
+    event SchoolFeeUpdated(uint256 oldFee, uint256 newFee);
+    event FundsWithdrawn(address recipient, uint256 amount);
+    event PrincipalTransferred(address oldPrincipal, address newPrincipal);
+
     // Modifiers
     modifier onlyPrincipal() {
-        require(msg.sender == principal, "Only principal can perform this action");
+        require(
+            msg.sender == principal,
+            "Only principal can perform this action"
+        );
         _;
     }
 
@@ -34,7 +38,10 @@ contract SMS {
     }
 
     modifier studentEnrolled() {
-        require(students[msg.sender].isEnrolled, "Student not enrolled. Contact principal for enrollment");
+        require(
+            students[msg.sender].isEnrolled,
+            "Student not enrolled. Contact principal for enrollment"
+        );
         _;
     }
 
@@ -49,30 +56,37 @@ contract SMS {
     function studentApply(string memory name) public {
         require(bytes(name).length > 0, "Name cannot be empty");
         require(!students[msg.sender].exists, "You have already applied");
-        
+
         students[msg.sender] = Student(msg.sender, name, true, false, false);
         emit StudentApplied(msg.sender, name);
     }
 
     // Principal registers/enrolls a student
-    function registerStudent(address studentId) public onlyPrincipal studentExists(studentId) {
+    function registerStudent(
+        address studentId
+    ) public onlyPrincipal studentExists(studentId) {
         require(!students[studentId].isEnrolled, "Student is already enrolled");
-        
+
         students[studentId].isEnrolled = true;
         emit StudentRegistered(studentId, students[studentId].name);
     }
 
     // Student pays school fee
     function paySchoolFee() public payable studentEnrolled {
-        require(msg.value == schoolFee, "Incorrect fee amount. Please pay the exact school fee");
+        require(
+            msg.value == schoolFee,
+            "Incorrect fee amount. Please pay the exact school fee"
+        );
         require(!students[msg.sender].isFeePaid, "Fee already paid");
-        
+
         students[msg.sender].isFeePaid = true;
         emit SchoolFeePaid(msg.sender, msg.value);
     }
 
     // Principal checks if student has paid fee
-    function hasStudentPaidFee(address studentId) public view onlyPrincipal studentExists(studentId) returns (bool) {
+    function hasStudentPaidFee(
+        address studentId
+    ) public view onlyPrincipal studentExists(studentId) returns (bool) {
         return students[studentId].isFeePaid;
     }
 
@@ -83,8 +97,15 @@ contract SMS {
     }
 
     // Get student details (principal only)
-    function getStudentDetails(address studentId) public view onlyPrincipal studentExists(studentId) 
-        returns (string memory name, bool isEnrolled, bool isFeePaid) {
+    function getStudentDetails(
+        address studentId
+    )
+        public
+        view
+        onlyPrincipal
+        studentExists(studentId)
+        returns (string memory name, bool isEnrolled, bool isFeePaid)
+    {
         Student memory student = students[studentId];
         return (student.name, student.isEnrolled, student.isFeePaid);
     }
@@ -92,11 +113,13 @@ contract SMS {
     // Principal can update school fee
     function updateSchoolFee(uint256 newFee) public onlyPrincipal {
         require(newFee > 0, "Fee must be greater than zero");
-        require(newFee != schoolFee, "New fee must be different from current fee");
-        
-        uint256 oldFee = schoolFee;
+        require(
+            newFee != schoolFee,
+            "New fee must be different from current fee"
+        );
+
+        emit SchoolFeeUpdated(schoolFee, newFee);
         schoolFee = newFee;
-        emit FeeUpdated(oldFee, newFee);
     }
 
     // Principal withdraws collected fees
@@ -104,23 +127,22 @@ contract SMS {
         uint256 contractBalance = address(this).balance;
         require(contractBalance > 0, "No funds available");
         require(amount <= contractBalance, "Insufficient contract balance");
-        
-        // Use call instead of transfer for better gas handling
+
         (bool success, ) = payable(principal).call{value: amount}("");
         require(success, "Withdrawal failed");
-        
-        emit FundsWithdrawn(amount);
+
+        emit FundsWithdrawn(msg.sender, amount);
     }
 
     // Withdraw all funds
     function withdrawAllFunds() public onlyPrincipal {
         uint256 contractBalance = address(this).balance;
         require(contractBalance > 0, "No funds available");
-        
-        (bool success, ) = payable(principal).call{value: contractBalance}("");
+
+        bool success = payable(principal).send(contractBalance);
         require(success, "Withdrawal failed");
-        
-        emit FundsWithdrawn(contractBalance);
+
+        emit FundsWithdrawn(msg.sender, contractBalance);
     }
 
     // Get contract balance
@@ -132,6 +154,7 @@ contract SMS {
     function transferPrincipalRole(address newPrincipal) public onlyPrincipal {
         require(newPrincipal != address(0), "Invalid principal address");
         require(newPrincipal != principal, "Already the principal");
+
         principal = newPrincipal;
     }
 
